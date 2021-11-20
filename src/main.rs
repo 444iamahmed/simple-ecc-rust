@@ -5,20 +5,14 @@ use num_traits::Zero;
 use std::io;
 use std::str::FromStr;
 
+
 #[derive(Clone, PartialEq, Debug)]
 struct Point {
     x: BigInt,
     y: BigInt,
 }
 
-// impl AddAssign for Point {
-//     fn add_assign(&mut self, other: Self) {
-//         *self = Self {
-//             x: self.x + other.x,
-//             y: self.y + other.y,
-//         };
-//     }
-// }
+
 
 #[derive(Clone)]
 struct ECC {
@@ -31,7 +25,7 @@ struct ECC {
 
 impl ECC {
     fn reduce_modp(&self, x: BigInt) -> BigInt {
-        x % self.p
+        x % self.p.clone()
     }
 
     fn equal_modp(&self, x: BigInt, y: BigInt) -> bool {
@@ -39,17 +33,17 @@ impl ECC {
     }
 
     fn inverse_modp(&self, x: BigInt) -> Option<BigInt> {
-        if self.reduce_modp(x) == BigInt::zero() {
+        if self.reduce_modp(x.clone()) == BigInt::zero() {
             return None;
         }
-        Some(x.modpow(&(self.p - BigInt::from(2)), &self.p)) //(self.p - BigInt::from(2))))
+        Some(x.modpow(&(self.p.clone() - BigInt::from(2)), &self.p)) //(self.p - BigInt::from(2))))
     }
 
     fn apply_bin_operation(
         &self,
         p1_maybe: Option<Point>,
         p2_maybe: Option<Point>,
-        op: Box<dyn Fn(Point, Point) -> Point>,
+        op: Box<dyn Fn(Point, Point) -> Point> ,
     ) -> Option<Point> {
         if let Some(p1) = p1_maybe {
             if let Some(p2) = p2_maybe {
@@ -68,20 +62,20 @@ impl ECC {
 
         if p1 == p2 {
             lambda = self.reduce_modp(
-                (BigInt::from(3) * p1.x * p1.x + self.a)
-                    / (BigInt::from(2) * p1.y),
+                (BigInt::from(3) * p1.x.clone() * p1.x.clone() + self.a.clone())
+                    / (BigInt::from(2) * p1.y.clone()),
             );
         } else {
             lambda =
-                self.reduce_modp((p2.y - p1.y) / (p2.x - p1.x));
+                self.reduce_modp((p2.y.clone() - p1.y.clone()) / (p2.x.clone() - p1.x.clone()));
         }
 
-        let x3 = self.reduce_modp(lambda * lambda - p1.x - p2.x);
-        let y3 = self.reduce_modp(lambda * (p1.x - x3) - p1.y);
+        let x3 = self.reduce_modp(lambda.clone() * lambda.clone() - p1.x.clone() - p2.x.clone());
+        let y3 = self.reduce_modp(lambda.clone() * (p1.x.clone() - x3.clone()) - p1.y.clone());
 
         return Point {
-            x: x3,
-            y: y3,
+            x: x3.clone(),
+            y: y3.clone(),
         };
     }
     fn subtraction_util(&self, p1: Point, p2: Point) -> Point {
@@ -99,15 +93,9 @@ impl ECC {
         let mut new_point = p;
         let mut i = BigInt::from(1);
 
-        let closure  = |temp_p1, temp_p2| {
-            self.addition_util(temp_p1, temp_p2)
-        };     
+        let closure = |temp_p1, temp_p2| -> Point { self.addition_util(temp_p1, temp_p2) };
         while i <= n {
-
-                
-            new_point = self.apply_bin_operation(
-                p, p, Box::new(closure)
-            );
+            new_point = self.apply_bin_operation(new_point.clone(), new_point.clone(), Box::new(closure));
             i += BigInt::one();
         }
 
@@ -119,12 +107,11 @@ impl ECC {
     }
 
     fn encrypt(&self, m: Point, pub_k: Point) -> Point {
-        
-        let closure = |temp_p1, temp_p2|
+        let closure = |temp_p1, temp_p2| self.addition_util(temp_p1, temp_p2);
         self.apply_bin_operation(
             Some(m),
             Some(self.scalar_multiplication(self.k.clone(), Some(pub_k))),
-            Box::new()
+            Box::new(closure),
         )
         .unwrap()
     }
