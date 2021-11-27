@@ -5,14 +5,11 @@ use num_traits::Zero;
 use std::io;
 use std::str::FromStr;
 
-
 #[derive(Clone, PartialEq, Debug)]
 struct Point {
     x: BigInt,
     y: BigInt,
 }
-
-
 
 #[derive(Clone)]
 struct ECC {
@@ -43,22 +40,17 @@ impl ECC {
         &self,
         p1_maybe: Option<Point>,
         p2_maybe: Option<Point>,
-        op: Box<dyn Fn(Point, Point) -> Point> ,
+        op: &Box<dyn Fn(Point, Point) -> Point>,
     ) -> Option<Point> {
-        if let Some(p1) = p1_maybe {
-            if let Some(p2) = p2_maybe {
-                return Some(op(p1, p2));
-            }
-            return None;
+        if let (Some(p1), Some(p2)) = (p1_maybe, p2_maybe) {
+            Some(op(p1, p2))
+        } else {
+            None
         }
-        return None;
     }
 
     fn addition_util(&self, p1: Point, p2: Point) -> Point {
         let lambda: BigInt;
-
-        // let p1 = p1.clone();
-        // let p2 = p2.clone();
 
         if p1 == p2 {
             lambda = self.reduce_modp(
@@ -66,8 +58,10 @@ impl ECC {
                     / (BigInt::from(2) * p1.y.clone()),
             );
         } else {
-            lambda =
-                self.reduce_modp((p2.y.clone() - p1.y.clone()) / (p2.x.clone() - p1.x.clone()));
+            lambda = self.reduce_modp(
+                (p2.y.clone() - p1.y.clone())
+                    * self.inverse_modp(p2.x.clone() - p1.x.clone()).unwrap(),
+            );
         }
 
         let x3 = self.reduce_modp(lambda.clone() * lambda.clone() - p1.x.clone() - p2.x.clone());
@@ -78,6 +72,7 @@ impl ECC {
             y: y3.clone(),
         };
     }
+
     fn subtraction_util(&self, p1: Point, p2: Point) -> Point {
         self.addition_util(p1, Point { x: p2.x, y: -p2.y })
     }
@@ -92,10 +87,11 @@ impl ECC {
     fn scalar_multiplication(&self, n: BigInt, p: Option<Point>) -> Point {
         let mut new_point = p;
         let mut i = BigInt::from(1);
-
-        let closure = |temp_p1, temp_p2| -> Point { self.addition_util(temp_p1, temp_p2) };
+        let cloned = self.clone();
+        let closure: Box<dyn Fn(Point, Point) -> Point> =
+            Box::new(move |temp_p1, temp_p2| -> Point { cloned.addition_util(temp_p1, temp_p2) });
         while i <= n {
-            new_point = self.apply_bin_operation(new_point.clone(), new_point.clone(), Box::new(closure));
+            new_point = self.apply_bin_operation(new_point.clone(), new_point.clone(), &closure);
             i += BigInt::one();
         }
 
@@ -106,18 +102,28 @@ impl ECC {
         self.scalar_multiplication(n, Some(self.g.clone()))
     }
 
-    fn encrypt(&self, m: Point, pub_k: Point) -> Point {
-        let closure = |temp_p1, temp_p2| self.addition_util(temp_p1, temp_p2);
+    fn encrypt_byte(&self, m: Point, pub_k: Point) -> Point {
+        let cloned = self.clone();
+        let closure: Box<dyn Fn(Point, Point) -> Point> =
+            Box::new(move |temp_p1, temp_p2| cloned.addition_util(temp_p1, temp_p2));
         self.apply_bin_operation(
             Some(m),
             Some(self.scalar_multiplication(self.k.clone(), Some(pub_k))),
-            Box::new(closure),
+            &closure,
         )
         .unwrap()
     }
 
-    fn decrypt(&self, c: Point) -> Point {
-        self.scalar_multiplication(self.k.clone(), Some(c))
+    fn decrypt_byte(&self, c: Point, pub_k: Point) -> Point {
+        let cloned = self.clone();
+        let closure: Box<dyn Fn(Point, Point) -> Point> =
+            Box::new(move |temp_p1, temp_p2| cloned.subtraction_util(temp_p1, temp_p2));
+        self.apply_bin_operation(
+            Some(c),
+            Some(self.scalar_multiplication(self.k.clone(), Some(pub_k))),
+            &closure,
+        )
+        .unwrap()
     }
 }
 
@@ -164,9 +170,10 @@ fn main() {
     println!("{}", new_ecc.is_point_valid(m.clone()));
     println!("{:?}", m);
     // // println!("{:?}", new_ecc.decrypt(new_ecc.encrypt(m, public_key));
-    println!("{:?}", new_ecc.decrypt(new_ecc.encrypt(m, public_key)));
+    println!("{:?}", new_ecc.decrypt_byte(new_ecc.encrypt_byte(m, public_key.clone()), public_key.clone()));
 }
 
 // fn main() {
 //     println!("Hello")
 // }
+//
